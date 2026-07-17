@@ -1,5 +1,5 @@
 export const env = {
-  port: Number(process.env.PORT ?? 3000),
+  port: Number(process.env.PORT ?? 3001),
   systemPrompt: process.env.SYSTEM_PROMPT ?? "You are a concise Japanese AItuber.",
   corsOrigins: (process.env.CORS_ORIGINS ?? "")
     .split(",")

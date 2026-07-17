@@ -9,9 +9,15 @@
     "pnpm": ">=10 <11"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "dev:none": "tsx watch --env-file-if-exists=.env src/provider-entry.ts none",
+    "dev:local": "tsx watch --env-file-if-exists=.env src/provider-entry.ts voicevox-local",
+    "dev:api": "tsx watch --env-file-if-exists=.env src/provider-entry.ts voicevox-ttsquest",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "start:none": "node --env-file-if-exists=.env dist/provider-entry.js none",
+    "start:local": "node --env-file-if-exists=.env dist/provider-entry.js voicevox-local",
+    "start:api": "node --env-file-if-exists=.env dist/provider-entry.js voicevox-ttsquest",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --import-plugin --node-plugin --vitest-plugin --deny-warnings .",
     "lint:fix": "oxlint --fix --import-plugin --node-plugin --vitest-plugin .",

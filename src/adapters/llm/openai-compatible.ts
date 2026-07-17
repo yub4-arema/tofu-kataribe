@@ -1,16 +1,37 @@
 import type { ChatMessage, LlmProvider } from "../../core/ports.js";
+
+export type OpenAiCompatibleAuth =
+  | { type: "bearer"; apiKey: string }
+  | { type: "basic"; username: string; password: string };
+
+export function createOpenAiCompatibleAuth(
+  apiKey: string | undefined,
+  basicUsername: string | undefined,
+  basicPassword: string | undefined,
+): OpenAiCompatibleAuth | undefined {
+  const hasBasicUsername = Boolean(basicUsername);
+  const hasBasicPassword = Boolean(basicPassword);
+
+  if (hasBasicUsername !== hasBasicPassword) throw new Error("OPENAI_BASIC_AUTH_INCOMPLETE");
+  if (apiKey && hasBasicUsername) throw new Error("OPENAI_AUTH_AMBIGUOUS");
+  if (basicUsername && basicPassword)
+    return { type: "basic", username: basicUsername, password: basicPassword };
+  if (apiKey) return { type: "bearer", apiKey };
+  return undefined;
+}
+
 export class OpenAiCompatibleLlmProvider implements LlmProvider {
   constructor(
     private readonly endpoint: string,
-    private readonly apiKey: string | undefined,
     private readonly model: string,
+    private readonly auth: OpenAiCompatibleAuth | undefined,
   ) {}
   async *stream(messages: ChatMessage[], signal?: AbortSignal): AsyncIterable<string> {
     const response = await fetch(this.endpoint, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
+        ...(this.auth ? { authorization: this.authorizationHeader(this.auth) } : {}),
       },
       body: JSON.stringify({ model: this.model, messages, stream: true }),
       signal: signal ?? null,
@@ -36,5 +57,11 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
   }
   async health(): Promise<boolean> {
     return true;
+  }
+
+  private authorizationHeader(auth: OpenAiCompatibleAuth): string {
+    if (auth.type === "bearer") return `Bearer ${auth.apiKey}`;
+    const credentials = Buffer.from(`${auth.username}:${auth.password}`, "utf8").toString("base64");
+    return `Basic ${credentials}`;
   }
 }
