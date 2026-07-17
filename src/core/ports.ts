@@ -4,8 +4,13 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
 }
+export interface AudioInput {
+  bytes: Uint8Array;
+  format: "wav" | "mp3";
+}
 export interface LlmProvider {
   stream(messages: ChatMessage[], signal?: AbortSignal): AsyncIterable<string>;
+  transcribe(audio: AudioInput, signal?: AbortSignal): Promise<string>;
   health(): Promise<boolean>;
 }
 export interface SpeechResult {
@@ -20,12 +25,6 @@ export interface SpeechProvider {
     signal?: AbortSignal,
   ): Promise<SpeechResult | undefined>;
   health(): Promise<boolean>;
-}
-export interface ConversationStore {
-  get(sessionId: string): Promise<ChatMessage[]>;
-  appendTurn(sessionId: string, user: string, assistant: string): Promise<void>;
-  delete(sessionId: string): Promise<void>;
-  sweep(): Promise<void>;
 }
 export interface AudioStorage {
   save(

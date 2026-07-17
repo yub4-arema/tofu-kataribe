@@ -1,9 +1,9 @@
 import { ReactionTagParser } from "./reaction-parser.js";
 import { SentenceSplitter } from "./sentence-splitter.js";
 import type {
+  AudioInput,
   AudioStorage,
   ChatMessage,
-  ConversationStore,
   EventConsumer,
   InputTransformer,
   LlmProvider,
@@ -15,14 +15,18 @@ export class TurnService {
     private readonly deps: {
       llm: LlmProvider;
       speech: SpeechProvider;
-      store: ConversationStore;
       audio: AudioStorage;
       systemPrompt: string;
       transformers?: InputTransformer[];
       consumers?: EventConsumer[];
     },
   ) {}
-  async *run(sessionId: string, input: string, signal?: AbortSignal): AsyncIterable<TurnEvent> {
+  async *run(
+    sessionId: string,
+    clientMessages: ChatMessage[],
+    audioInput?: AudioInput,
+    signal?: AbortSignal,
+  ): AsyncIterable<TurnEvent> {
     const turnId = crypto.randomUUID();
     const started: TurnEvent = { type: "turn.started", turnId, sessionId };
     yield started;
@@ -31,15 +35,21 @@ export class TurnService {
       let transformed = input;
       for (const transformer of this.deps.transformers ?? [])
         transformed = await transformer.transform(transformed);
-      const history = await this.deps.store.get(sessionId);
+      let messagesFromClient = clientMessages;
+      if (audioInput) {
+        const transcript = await this.deps.llm.transcribe(audioInput, signal);
+        const transcribed: TurnEvent = { type: "input.transcribed", turnId, text: transcript };
+        yield transcribed;
+        await this.consume(transcribed);
+        messagesFromClient = [...clientMessages, { role: "user", content: transcript }];
+      }
       const messages: ChatMessage[] = [
         { role: "system", content: this.deps.systemPrompt },
         {
           role: "system",
           content: "Prefix each sentence with one reaction tag like [reaction:happy].",
         },
-        ...history,
-        { role: "user", content: transformed },
+        ...messagesFromClient,
       ];
       const parser = new ReactionTagParser();
       const splitter = new SentenceSplitter();
@@ -93,7 +103,6 @@ export class TurnService {
         await this.consume(delta);
       }
       for (const sentence of splitter.flush()) yield* emitSentence(this, sentence);
-      await this.deps.store.appendTurn(sessionId, input, fullText);
       const completed: TurnEvent = {
         type: "turn.completed",
         turnId,

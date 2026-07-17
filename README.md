@@ -81,7 +81,7 @@ Do not parse each network chunk as one JSON value: one JSON line may be split ac
 
 ## Operations
 
-On a Mac mini, keep only this Node process under `launchd`; manage VOICEVOX separately. The initial deployment assumes one replica. For multiple replicas, replace `ConversationStore` and `AudioStorage` with shared implementations such as Redis and object storage.
+On a Mac mini, keep only this Node process under `launchd`; manage VOICEVOX separately. The current deployment assumes one replica, and conversation history is cleared when the process restarts.
 
 ## Checks
 

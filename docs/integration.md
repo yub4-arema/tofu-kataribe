@@ -243,7 +243,7 @@ await fetch(new URL(`/v1/sessions/${sessionId}`, baseUrl), {
 });
 ```
 
-現在の会話履歴は kataribe プロセス内のメモリにあり、再起動で消えます。Vercel や複数インスタンスでの制約は [deployment-vercel.md](./deployment-vercel.md) を参照してください。
+現在の会話履歴は kataribe プロセス内のメモリにあり、再起動で消れます。
 
 ## Discord Bot などでの使い方
 

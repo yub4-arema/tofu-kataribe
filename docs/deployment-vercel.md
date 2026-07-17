@@ -4,15 +4,15 @@
 
 ## 結論
 
-現在のコードはローカル常駐サーバー向けであり、そのまま Vercel に本番デプロイできる状態ではありません。
+Vercel 対応は可能です。ただし、現在のコードはローカル常駐サーバー向けなので、Vercel 用のエントリーポイントへ分離する必要があります。
 
 Vercel は Hono アプリを自動検出できますが、認識対象のエントリーポイントから Hono アプリを default export する必要があります。現在の `src/index.ts` は `@hono/node-server` の `serve()` を実行して常駐サーバーを起動するため、Vercel Functions 用の入口とは異なります。
 
-さらに、会話履歴などのプロセス内状態と `.data/audio` のローカルファイル保存は、複数インスタンスやサーバーレス環境では永続性を保証できません。
+最初の Vercel 対応は `SPEECH_PROVIDER=none` のテキスト配信を対象とします。会話履歴は現在どおりメモリ上に保持し、再起動時に消える仕様とします。
 
 ## Vercel 対応チェックリスト
 
-### 最初のテキスト配信までに必要
+### テキスト配信に必要
 
 - [ ] Hono アプリの組み立てを、ローカルサーバー起動処理から分離する
 - [ ] Vercel が認識する `src/index.ts` などから Hono アプリを default export する
@@ -22,16 +22,6 @@ Vercel は Hono アプリを自動検出できますが、認識対象のエン�
 - [ ] Production と Preview の環境変数を設定する
 - [ ] `API_AUTH_TOKEN` を設定し、生成 API を無認証で公開しない
 - [ ] `pnpm check` と `vercel dev` を通す
-
-### 会話・音声を含む本番運用までに必要
-
-- [ ] `InMemoryConversationStore` を Redis、Postgres などの共有ストアへ置き換える
-- [ ] `FileAudioStorage` をオブジェクトストレージへ置き換える
-- [ ] レート制限を共有ストアまたは Vercel Firewall などへ移す
-- [ ] セッション排他が複数インスタンスでも成立する設計にする
-- [ ] 音声 URL の有効期限と削除処理を外部ストレージ側で設計する
-- [ ] ストリーミング時間が利用プランの Function 実行時間内に収まることを確認する
-- [ ] Vercel の Runtime Logs / Observability でエラーと実行時間を監視する
 
 ## Vercel 向けに変更する構成
 
@@ -50,18 +40,12 @@ Vercel の Hono 自動検出を利用する場合、独自の Build Command や 
 
 ## Vercel で成立しない現在の状態
 
-| 現在の実装                       | Vercel での問題                                          | 移行方針                                  |
-| -------------------------------- | -------------------------------------------------------- | ----------------------------------------- |
-| `@hono/node-server` で `serve()` | 常駐サーバーを起動する入口になっている                   | Hono アプリの default export に分離       |
-| `InMemoryConversationStore`      | インスタンス間で履歴を共有できず、再起動で消える         | Redis / Postgres などへ移行               |
-| `.data/audio` への書き込み       | Function の通常ファイルシステムは読み取り専用            | オブジェクトストレージへ移行              |
-| 音声 ID の `Map`                 | 音声を保存したインスタンス以外では参照できない           | 音声メタデータも共有ストアへ移行          |
-| レート制限用の `Map`             | インスタンスごとの制限になり、全体制限にならない         | 共有ストアまたは Firewall へ移行          |
-| `SessionQueue`                   | 同一セッションが別インスタンスへ分散すると直列化できない | 分散ロックまたは処理モデルを再設計        |
-| `VOICEVOX_URL=127.0.0.1`         | Vercel から手元の VOICEVOX へ到達できない                | 公開 HTTPS 音声 API または外部 TTS を利用 |
-| ローカル Ollama URL              | Vercel から `localhost` や家庭内 LAN へ到達できない      | 公開 HTTPS エンドポイントを利用           |
-
-Vercel Functions では `/tmp` のみ一時書き込みが可能ですが、永続ストレージではありません。音声を後続リクエストで取得する現在の API には、外部ストレージが必要です。
+| 現在の実装                       | Vercel での対応                                       |
+| -------------------------------- | ----------------------------------------------------- |
+| `@hono/node-server` で `serve()` | Hono アプリの default export とローカル起動を分離する |
+| `FileAudioStorage`               | 初期対応では `SPEECH_PROVIDER=none` にして使用しない  |
+| `VOICEVOX_URL=127.0.0.1`         | Vercel から到達できないため初期対応では使用しない     |
+| ローカル Ollama URL              | Vercel から到達できる HTTPS URL に変更する            |
 
 ## 環境変数
 
@@ -206,21 +190,19 @@ pnpm dlx vercel rollback
 pnpm dlx vercel promote <deployment-url>
 ```
 
-ロールバック後は、環境変数や外部ストレージの状態まで自動的に元へ戻るとは限りません。コード以外の変更が障害原因でないかも確認します。
+ロールバック後も環境変数は別管理です。コード以外の変更が障害原因でないか確認します。
 
 ## よくある問題
 
-| 症状                                  | 確認箇所                                                             |
-| ------------------------------------- | -------------------------------------------------------------------- |
-| Hono のルートが 404                   | Vercel が読むファイルから Hono app を default export しているか      |
-| ビルド時に Node.js バージョンエラー   | Dashboard と `package.json` が Node.js 24 になっているか             |
-| `turn.error` に `LLM_401` / `LLM_403` | LLM 認証方式と Environment Variables                                 |
-| `turn.error` に `LLM_404`             | `OPENAI_BASE_URL` が `/v1/chat/completions` まで含むか               |
-| ローカル Ollama に接続できない        | URL が Vercel から到達できる公開 HTTPS か                            |
-| ブラウザーだけ CORS エラー            | `CORS_ORIGINS` がスキームとホストを含む完全な Origin か              |
-| 会話履歴が突然消える                  | インメモリストアのまま複数インスタンスまたは再起動が発生していないか |
-| 音声 URL が 404                       | ファイルと ID がインスタンスローカルのままになっていないか           |
-| ストリームが途中で終了                | LLM / TTS の待機時間と Function の実行時間上限                       |
+| 症状                                  | 確認箇所                                                        |
+| ------------------------------------- | --------------------------------------------------------------- |
+| Hono のルートが 404                   | Vercel が読むファイルから Hono app を default export しているか |
+| ビルド時に Node.js バージョンエラー   | Dashboard と `package.json` が Node.js 24 になっているか        |
+| `turn.error` に `LLM_401` / `LLM_403` | LLM 認証方式と Environment Variables                            |
+| `turn.error` に `LLM_404`             | `OPENAI_BASE_URL` が `/v1/chat/completions` まで含むか          |
+| ローカル Ollama に接続できない        | URL が Vercel から到達できる公開 HTTPS か                       |
+| ブラウザーだけ CORS エラー            | `CORS_ORIGINS` がスキームとホストを含む完全な Origin か         |
+| ストリームが途中で終了                | LLM / TTS の待機時間と Function の実行時間上限                  |
 
 ## 公式資料
 

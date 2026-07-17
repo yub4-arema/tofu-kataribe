@@ -11,6 +11,7 @@ export const reactions = [
 export type Reaction = (typeof reactions)[number];
 export type TurnEvent =
   | { type: "turn.started"; turnId: string; sessionId: string }
+  | { type: "input.transcribed"; turnId: string; text: string }
   | { type: "text.delta"; turnId: string; delta: string }
   | {
       type: "sentence.ready";

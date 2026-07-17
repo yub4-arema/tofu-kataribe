@@ -1,4 +1,4 @@
-import type { ChatMessage, LlmProvider } from "../../core/ports.js";
+import type { AudioInput, ChatMessage, LlmProvider } from "../../core/ports.js";
 
 export type OpenAiCompatibleAuth =
   | { type: "bearer"; apiKey: string }
@@ -55,6 +55,47 @@ export class OpenAiCompatibleLlmProvider implements LlmProvider {
       }
     }
   }
+
+  async transcribe(audio: AudioInput, signal?: AbortSignal): Promise<string> {
+    const response = await fetch(this.endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(this.auth ? { authorization: this.authorizationHeader(this.auth) } : {}),
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Transcribe the spoken content accurately. Return only the transcript in the original language.",
+              },
+              {
+                type: "input_audio",
+                input_audio: {
+                  data: Buffer.from(audio.bytes).toString("base64"),
+                  format: audio.format,
+                },
+              },
+            ],
+          },
+        ],
+        stream: false,
+      }),
+      signal: signal ?? null,
+    });
+    if (!response.ok) throw new Error(`LLM_AUDIO_${response.status}`);
+    const json = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const transcript = json.choices?.[0]?.message?.content?.trim();
+    if (!transcript) throw new Error("AUDIO_TRANSCRIPTION_EMPTY");
+    return transcript;
+  }
+
   async health(): Promise<boolean> {
     return true;
   }
